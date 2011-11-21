@@ -1,0 +1,13 @@
+Run ./build.sh to compile.
+The two test programs, client and server, are built into the Client and Server folders, respectively.
+
+The server must be started before the client for the three-way handshake to work.
+
+When the protocol is done, it prints "Data written to file received.jpg".
+It is then up to the user to terminate the programs manually by hitting "CTRL-C".
+
+The received files are named "received.jpg", and may be opened in an image viewer of your choice, for instance The Gimp.
+
+Not implemented (yet):
+Re-synchronization
+Connection abort
