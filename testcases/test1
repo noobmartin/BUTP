@@ -1,0 +1,33 @@
+Number and name of test case
+-----------------
+ 1 - Average bit rate on 54Mbit WLAN link with at least 80% signal strength
+
+Purpose of test
+---------------
+To test which of the following achieves the highest average bit rate during a one minute test run:
+ 1) Vanilla TCP
+ 2) BUTP with no active queuing algorithm
+ 3) BUTP with different kinds of queuing algorithms
+
+What data will we gain from this test?
+--------------------------------------
+ 1) The average bit rate, which will tell us which of the protocols and additions are superior
+
+Variables to record
+-------------------
+ 1) Average bit rate
+
+Equipment needed
+----------------
+ 1) Laptop (or stationary computer) equipped with a 802.11g card
+ 2) Wirelesst 802.11g access point
+ 3) Server to test against
+
+Location of test
+----------------
+ 1) Anywhere where the equipment stated above is located.
+
+Date of test (? if unknown)
+------------
+ ?
+

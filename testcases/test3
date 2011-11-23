@@ -1,0 +1,34 @@
+Number and name of test case
+-----------------
+ 3 - Bit rate on bad 802.11g link
+
+Purpose of test
+---------------
+To test which of the following achieves the highest average bit rate on a link with 50% signal strength:
+ 1) Vanilla TCP
+ 2) BUTP with to active queuing algorithm
+ 3) BUTP with different kinds of queuing algorithms
+
+What data will we gain from this test?
+--------------------------------------
+ 1) It will tell us which protocol yields the highest average bit rate on low-quality wireless links.
+
+Variables to record
+-------------------
+ 1) Time intervals to operating speed
+ 2) Operating speed
+
+Equipment needed
+----------------
+ 1) Laptop (or stationary computer) equipped with a 802.11g card
+ 2) Wireless 802.11g access point
+ 3) Server to test against
+
+Location of test
+----------------
+ 1) Anywhere where the equipment stated above is located.
+
+Date of test (? if unknown)
+------------
+ ?
+
