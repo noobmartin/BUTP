@@ -1,0 +1,36 @@
+Running the code from Windows
+-----------------------------
+ 1) Open putty
+ 2) Connect to rajula.org
+ 3) Change directory to code by:
+  * cd code
+ 4) Change directory to Server by:
+  * cd Server
+ 5) Start the server by specifying parameters:
+  # ./server portnumber packet_loss_ratio corruption_ratio
+  * ./server 2000 0 0
+ 6) Repeat steps 1-3
+ 7) Change directory to Client by:
+  * cd Client
+ 8) Start the client by specifying parameters:
+  # ./client hostname port packet_loss_ratio corruption_ratio
+  * ./client rajula.org 2000 0 0
+
+They will start the transfer immediately.
+
+Building the code
+-----------------
+If changes has been made to the source code, the code can be compiled by running the following command from the code folder:
+ * ./build.sh
+
+The client and server binaries are located in the Client and Server folders, respectively.
+
+Code structure
+--------------
+There are several source files in this project:
+ build.sh	  - This is a compile script, it compiles all source code and places the binaries in the right folder.
+ butp_functions.h - This is a header file for the protocol, and contains function definitions etc.
+ butp_data.h	  - This is a header file for the protocol, and contains global variables for the protocol.
+ butp.c		  - This is the main source file for the protocol.
+ client.c	  - This is just a simple C program which uses the library to transfer an image.
+ server.c	  - This is also just a C program which uses the library to transfer an image.
