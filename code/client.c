@@ -19,8 +19,8 @@
 int read_client_dog(char* buf, int buflen);
 
 int main(int argc, char **argv){
-	if(argc != 5){
-	  printf("Usage: hostname port packet_loss_ratio corruption_ratio\n");
+	if(argc != 6){
+	  printf("Usage: hostname port packet_loss_ratio corruption_ratio continuous_transmission\n");
 	  return 0;
 	}
 	char address[256];
@@ -99,7 +99,7 @@ int main(int argc, char **argv){
           p = p->ai_next;
         }
 
-	if(!set_parameters(p, ploss, corr)){
+	if(!set_parameters(p, ploss, corr, atoi(argv[5]))){
 	  printf("Could not set network parameters.\n");
 	  return -1;
 	}
@@ -116,7 +116,8 @@ int main(int argc, char **argv){
 	  return -1;
 	}
 
-	push_data_to_output_buffer(buf, read);
+	if(atoi(argv[5]) == 0)
+	  push_data_to_output_buffer(buf, read);
 
 	loop();
 

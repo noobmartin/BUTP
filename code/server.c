@@ -17,8 +17,8 @@
 int read_server_cat(char* buf, int buflen);
 
 int main(int argc, char **argv){
-	if(argc != 4){
-	  printf("Usage: port packet_loss_ratio corruption_ratio\n");
+	if(argc != 5){
+	  printf("Usage: port packet_loss_ratio corruption_ratio continuous_transmission\n");
 	  return 0;
 	}
 
@@ -101,7 +101,7 @@ int main(int argc, char **argv){
           p = p->ai_next;
         }
 
-	if(!set_parameters(p, ploss, corr)){
+	if(!set_parameters(p, ploss, corr, atoi(argv[4]))){
 	  return -1;
 	}
 	
@@ -116,7 +116,8 @@ int main(int argc, char **argv){
 	  return -1;
 	}
 
-	push_data_to_output_buffer(buf, read);
+	if(atoi(argv[4]) == 0)
+	  push_data_to_output_buffer(buf, read);
 
 	loop();
 

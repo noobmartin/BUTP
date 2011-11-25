@@ -19,7 +19,7 @@
 #include <fcntl.h>
 #include "butp_data.h"
 
-int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruption_ratio){
+int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruption_ratio, uint8_t transmission_type){
 	memset(rbuf, 0, MTU);
 	memset(sbuf, 0, MTU);
 
@@ -50,6 +50,14 @@ int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruptio
 	else
 	  SIMULATE_CORRUPTION = 0;
 	CORRUPTION_RATIO = corruption_ratio;
+
+	if(transmission_type != 0)
+	  CONTINUOUS_TRANSMISSION = 1;
+	else
+	  CONTINUOUS_TRANSMISSION = 0;
+
+	AVERAGE_BITRATE = 0;
+	AVERAGE_THROUGHPUT = 0;
 
 	state = CLOSED;
 
@@ -241,6 +249,12 @@ void loop(){
         if(setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv))){
           perror("Error with setsockopt:");
         }
+
+
+	struct timespec start_time;
+	clock_gettime(CLOCK_REALTIME, &start_time);
+	uint32_t bytes_sent = 0;
+	uint32_t data_bytes_sent = 0;
  do{
 	if(transmission_finished && reception_finished && !data_written)
 	  write_received_data();
@@ -268,7 +282,7 @@ void loop(){
 	else{
 	  if(!same_user(&source, destination))
 	    continue;
-
+	
 	  int skip = 0;
 	  if(SIMULATE_LOSSY_MEDIUM){
 	    skip = rand() % 100;
@@ -312,7 +326,22 @@ void loop(){
 
 	rval = sendto(sock, sbuf, outgoing_size, 0, (struct sockaddr*)destination->ai_addr, destination->ai_addrlen);
 
-	nanosleep(&packet_loop_interval_sleep, 0);
+	struct timespec send_time;
+	clock_gettime(CLOCK_REALTIME, &send_time);
+
+	bytes_sent+=outgoing_size;
+
+	if(has_data(&outgoing_packet.header))
+	  data_bytes_sent+=outgoing_packet.data_size;
+
+	float run_time = send_time.tv_sec - start_time.tv_sec;
+	run_time += ((send_time.tv_nsec - start_time.tv_nsec) / 1000000000);
+	float byte_rate = bytes_sent / run_time;
+	float data_byte_rate = data_bytes_sent / run_time;
+
+	printf("Byte rate: %f Bps Data byte rate: %f Bps \n", byte_rate, data_byte_rate);
+
+	//nanosleep(&packet_loop_interval_sleep, 0);
  }while(1);
 }
 
@@ -353,7 +382,7 @@ void packet_timeout_function(){
 
 	  ((butp_header*)sbuf)->chk = calculate_checksum(sbuf, sizeof(butp_header)+ptr->data_size);
 	   
-	  printf("RE-TRANSMISSION of packet with data: seq: %u ack: %u opt: %u\n",ptr->header.seq, ptr->header.ack, ptr->header.opt);
+	  //printf("RE-TRANSMISSION of packet with data: seq: %u ack: %u opt: %u\n",ptr->header.seq, ptr->header.ack, ptr->header.opt);
 
 	  host_header_to_network((butp_wtheader*)sbuf);
 	  int rval = sendto(sock, sbuf, sizeof(butp_header)+ptr->data_size, 0, (struct sockaddr*)destination->ai_addr, destination->ai_addrlen);
@@ -444,6 +473,17 @@ void build_outgoing(butp_wtheader* packet, uint32_t packet_data_size, butp_packe
 	if(reception_finished)
 	  outgoing_packet->header.opt|=FL_FAC;
 
+	// This just applies for continuous transmission of random data - create packets when there are none in the queue.
+	if((first_in_buffer == NULL) && CONTINUOUS_TRANSMISSION){
+	  butp_packet* packet = malloc(sizeof(butp_packet));
+	  memset(packet, 0, sizeof(butp_packet));
+	  first_in_buffer = packet;
+	  packet->header.seq = my_seq+MTU-FULL_HEADER_SIZE;
+	  packet->data_size = MTU-FULL_HEADER_SIZE;
+	  packet->datum = malloc(packet->data_size);
+	  my_seq += packet->data_size;
+	}
+	
 	// Pull packet from output buffer.
 	butp_packet* next_data_out = first_in_buffer;
 	if((next_data_out == NULL) && (in_transit_first == NULL)){
@@ -451,7 +491,7 @@ void build_outgoing(butp_wtheader* packet, uint32_t packet_data_size, butp_packe
 	  return;
 	}
 
-	if(next_data_out == NULL)
+	if((next_data_out == NULL))
 	  return;
 
 	// We must not ignore the receiver window size!	
@@ -700,11 +740,11 @@ int checksum_ok(char* packet, const int packet_length){
 	uint16_t checksum = calculate_checksum(packet, packet_length);
 	if(checksum != packet_checksum){
 	  pack->chk = packet_checksum;
-	  printf("CHECKSUM INVALID!\n");
+	  //printf("CHECKSUM INVALID!\n");
 	  return 0;
 	}
 	pack->chk = packet_checksum;
-	printf("CHECKSUM VALID!\n");
+	//printf("CHECKSUM VALID!\n");
 	return 1;
 }
 

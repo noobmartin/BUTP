@@ -17,6 +17,10 @@
 #include "butp_functions.h"
 
 
+uint8_t INSTANT_BITRATE = 0x0;
+uint8_t	AVERAGE_BITRATE = 0x0;
+uint8_t AVERAGE_THROUGHPUT = 0x0;
+uint8_t CONTINUOUS_TRANSMISSION = 0x0;
 uint8_t SIMULATE_LOSSY_MEDIUM = 0x0;
 uint8_t SIMULATE_CORRUPTION = 0x0;
 uint8_t PACKET_LOSS_RATIO = 75;
