@@ -257,7 +257,7 @@ void loop(){
  uint32_t data_bytes_sent = 0;
 
  // Open a logfile
- FILE* logfile = fopen("logfile.dat", "w");
+ FILE* logfile = fopen("raw_output.dat", "w");
  fprintf(logfile, "runtime yourwin byterate throughput inst_byterate inst_throughput\n");
 
  int packet_count = 0;

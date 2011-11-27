@@ -1,4 +1,4 @@
-LogData = importdata('logfile.dat');
+LogData = importdata('raw_output.dat');
 Time = LogData.data(:,1);
 Window = LogData.data(:,2);
 OutputByterate = LogData.data(:,3);
