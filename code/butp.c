@@ -256,10 +256,16 @@ void loop(){
 
  // Open a logfile
  FILE* logfile = fopen("logfile.dat", "w");
- fprintf(logfile, "runtime yourwin byterate throughput\n");
+ fprintf(logfile, "runtime yourwin byterate throughput inst_byterate inst_throughput\n");
+
+ int packet_count = 0;
+ int cumulative_bytes = 0;
+ int cumulative_data_bytes = 0;
+ struct timespec instant_rate_time;
 
  do{
  	struct addrinfo source;
+	memset(&source, 0, sizeof(struct addrinfo));
 	int rval = recvfrom(sock, rbuf, MTU, 0, source.ai_addr, &source.ai_addrlen);
 
 	butp_wtheader* packet = (butp_wtheader*)rbuf;
@@ -330,12 +336,35 @@ void loop(){
 	if(has_data(&outgoing_packet.header))
 	  data_bytes_sent+=outgoing_packet.data_size;
 
+	// Bitrate measurements
 	float run_time = send_time.tv_sec - start_time.tv_sec;
 	run_time += (float)((float)(send_time.tv_nsec - start_time.tv_nsec) / 1000000000);
 	float byte_rate = bytes_sent / run_time;
 	float data_byte_rate = data_bytes_sent / run_time;
 
-	fprintf(logfile, "%f\t%i\t%f\t%f\n", run_time, your_win, byte_rate, data_byte_rate);
+	packet_count++;
+	cumulative_bytes+=outgoing_size;
+	cumulative_data_bytes+=outgoing_packet.data_size;
+
+	float inst_byte_rate;
+	float inst_data_byte_rate;
+	if(packet_count == 100){
+	  float short_run_time = send_time.tv_sec - instant_rate_time.tv_sec;
+	  short_run_time += (float)((float)(send_time.tv_nsec - instant_rate_time.tv_nsec) / 1000000000);
+
+	  inst_byte_rate = cumulative_bytes / short_run_time;
+	  inst_data_byte_rate = cumulative_data_bytes / short_run_time;
+
+	  cumulative_bytes = 0;
+	  cumulative_data_bytes = 0;
+	  packet_count = 0;
+
+	  instant_rate_time.tv_sec = send_time.tv_sec;
+	  instant_rate_time.tv_nsec = send_time.tv_nsec;
+	}
+	
+
+	fprintf(logfile, "%f\t%i\t%f\t%f\t%f\t%f\n", run_time, your_win, byte_rate, data_byte_rate, inst_byte_rate, inst_data_byte_rate);
 
  }while(1);
  fclose(logfile);

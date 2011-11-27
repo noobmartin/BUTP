@@ -3,6 +3,8 @@ Time = LogData.data(:,1);
 Window = LogData.data(:,2);
 Byterate = LogData.data(:,3);
 Throughput = LogData.data(:,4);
+InstantByterate = LogData.data(:,5);
+InstantThroughput = LogData.data(:,6);
 
 figure('Name', 'Window size', 'NumberTitle', 'off');
 plot(Time, Window);
