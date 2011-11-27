@@ -322,12 +322,6 @@ void loop(){
 
 	rval = sendto(sock, sbuf, outgoing_size, 0, (struct sockaddr*)destination->ai_addr, destination->ai_addrlen);
 
-	if(rval == -1){
-	  perror("Sendto:");
-	  clear_lists();
-	  break;
-	}
-
 	struct timespec send_time;
 	clock_gettime(CLOCK_REALTIME, &send_time);
 
