@@ -103,7 +103,7 @@ int syn_init_wait(){
 	struct addrinfo source;
 	memset(&source, 0, sizeof(struct addrinfo));
 
-	int rval = recvfrom(sock, rbuf, 0xFFFF, 0, source.ai_addr, &source.ai_addrlen);
+	int rval = recvfrom(sock, rbuf, MTU, 0, source.ai_addr, &source.ai_addrlen);
 	if(rval == -1)
 	  return -1;
 
@@ -162,7 +162,7 @@ int syn_listen(){
             return -1;
         }
 
-	int rval = recvfrom(sock, rbuf, 0xFFFF, 0, destination->ai_addr, &(destination->ai_addrlen));
+	int rval = recvfrom(sock, rbuf, MTU, 0, destination->ai_addr, &(destination->ai_addrlen));
 	if(rval == -1)
 	  return -1;
 
@@ -218,8 +218,8 @@ int syn_listen_wait(){
 	memset(&source, 0, sizeof(struct addrinfo));
 
 	butp_wtheader* hdr = (butp_wtheader*)rbuf;
-	memset(rbuf, 0, 0xFFFF);
-	int rval = recvfrom(sock, rbuf, 0xFFFF, 0, source.ai_addr, &source.ai_addrlen);
+	memset(rbuf, 0, MTU);
+	int rval = recvfrom(sock, rbuf, MTU, 0, source.ai_addr, &source.ai_addrlen);
 	if(rval == -1)
 	  return -1;
 
@@ -242,23 +242,24 @@ int syn_listen_wait(){
 
 // Continuously listen for and send data.
 void loop(){
- 	struct addrinfo source;
-        struct timeval tv;
-        tv.tv_sec = 0;
-        tv.tv_usec = 100;
-        if(setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv))){
-          perror("Error with setsockopt:");
-        }
+ struct addrinfo source;
+ struct timeval tv;
+ tv.tv_sec = 0;
+ tv.tv_usec = 100;
+ if(setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv))){
+    perror("Error with setsockopt:");
+ }
 
+ struct timespec start_time;
+ clock_gettime(CLOCK_REALTIME, &start_time);
+ uint32_t bytes_sent = 0;
+ uint32_t data_bytes_sent = 0;
 
-	struct timespec start_time;
-	clock_gettime(CLOCK_REALTIME, &start_time);
-	uint32_t bytes_sent = 0;
-	uint32_t data_bytes_sent = 0;
+ // Open a logfile
+ FILE* logfile = fopen("logfile.dat", "w");
+ fprintf(logfile, "runtime yourwin byterate throughput\n");
+
  do{
-	if(transmission_finished && reception_finished && !data_written)
-	  write_received_data();
-
 	memset(rbuf, 0, MTU);
 	memset(sbuf, 0, MTU);
 	memset(&source, 0, sizeof(struct addrinfo));
@@ -326,6 +327,12 @@ void loop(){
 
 	rval = sendto(sock, sbuf, outgoing_size, 0, (struct sockaddr*)destination->ai_addr, destination->ai_addrlen);
 
+	if(rval == -1){
+	  perror("Sendto:");
+	  clear_lists();
+	  break;
+	}
+
 	struct timespec send_time;
 	clock_gettime(CLOCK_REALTIME, &send_time);
 
@@ -335,14 +342,14 @@ void loop(){
 	  data_bytes_sent+=outgoing_packet.data_size;
 
 	float run_time = send_time.tv_sec - start_time.tv_sec;
-	run_time += ((send_time.tv_nsec - start_time.tv_nsec) / 1000000000);
+	run_time += (float)((float)(send_time.tv_nsec - start_time.tv_nsec) / 1000000000);
 	float byte_rate = bytes_sent / run_time;
 	float data_byte_rate = data_bytes_sent / run_time;
 
-	printf("Byte rate: %f Bps Data byte rate: %f Bps \n", byte_rate, data_byte_rate);
+	fprintf(logfile, "%f\t%i\t%f\t%f\n", run_time, your_win, byte_rate, data_byte_rate);
 
-	//nanosleep(&packet_loop_interval_sleep, 0);
  }while(1);
+ fclose(logfile);
 }
 
 void packet_timeout_function(){
@@ -365,7 +372,6 @@ void packet_timeout_function(){
 	  if(ptr->no_trans == 1){
 	    if(your_win - packet_timeout_window_shrink > receiver_window_min){
 	      your_win -= packet_timeout_window_shrink;
-	      printf("SHRINKING WINDOW: %i\n",your_win);
 	    }
 	    else
 	      your_win = receiver_window_min;
@@ -382,8 +388,6 @@ void packet_timeout_function(){
 
 	  ((butp_header*)sbuf)->chk = calculate_checksum(sbuf, sizeof(butp_header)+ptr->data_size);
 	   
-	  //printf("RE-TRANSMISSION of packet with data: seq: %u ack: %u opt: %u\n",ptr->header.seq, ptr->header.ack, ptr->header.opt);
-
 	  host_header_to_network((butp_wtheader*)sbuf);
 	  int rval = sendto(sock, sbuf, sizeof(butp_header)+ptr->data_size, 0, (struct sockaddr*)destination->ai_addr, destination->ai_addrlen);
 	  memset(sbuf, 0, MTU);
@@ -395,7 +399,6 @@ void packet_timeout_function(){
 }
 
 void process_incoming(char* buf, const int len, butp_packet* outgoing_packet){
-	// Cast receive buffer to a more comfortable data type.
 	butp_wtheader* inbound = (butp_wtheader*)buf;
 
 	// Process ack.
@@ -414,13 +417,15 @@ void process_incoming(char* buf, const int len, butp_packet* outgoing_packet){
 	uint32_t data_length = get_data_length(inbound, len);
 	uint16_t header_length = get_header_length(inbound);
 	if(has_data(inbound) && checksum_ok(buf, len)){
-	  butp_packet* new_data = malloc(sizeof(butp_packet));
-	  memset(new_data, 0, sizeof(butp_packet));
-	  new_data->header.seq = inbound->seq;
-	  new_data->data_size = data_length;
-	  new_data->datum = malloc(data_length);
-	  memcpy(new_data->datum, buf+header_length, data_length);
-	  insert_packet_in_input_buffer(new_data);
+	  if(CONTINUOUS_TRANSMISSION == 0){
+	    butp_packet* new_data = malloc(sizeof(butp_packet));
+	    memset(new_data, 0, sizeof(butp_packet));
+	    new_data->header.seq = inbound->seq;
+	    new_data->data_size = data_length;
+	    new_data->datum = malloc(data_length);
+	    memcpy(new_data->datum, buf+header_length, data_length);
+	    insert_packet_in_input_buffer(new_data);
+	  }
 
 	  // Set ACK flag and ACK value in outgoing packet.
 	  outgoing_packet->header.ack = inbound->seq;
@@ -546,23 +551,6 @@ int pull_data_from_input_buffer(char* buf, uint32_t buflen){
 	}while(received_ready_first!=NULL);
 
 	return pushed_bytes;
-}
-
-void write_received_data(){
-	  butp_packet* ptr = received_ready_first;
-	  if(ptr == NULL)
-	    return;
-	  FILE* fp = fopen("received.jpg", "wb");
-	  do{
-	    printf("Wrote packet to file with seq: %u size: %u\n", ptr->header.seq, ptr->data_size);
-	    fwrite(ptr->datum, 1, ptr->data_size, fp);
-	    ptr = ptr->next;
-	  }while(ptr != NULL);
-	  fclose(fp);
-
-	printf("Data written to file received.jpg\n");
-
-	data_written = 1;
 }
 
 int push_data_to_output_buffer(const char* buf, const int buflen){
@@ -866,6 +854,20 @@ int has_abort(const butp_wtheader* packet){
 	return ((packet->opt)&FL_ABO);
 }
 
+void fill_output_buffer(const butp_packet* outgoing_packet){
+	if(outgoing_packet == NULL)
+	  return;
+	uint8_t header_length = get_header_length(&outgoing_packet->header);
+	uint32_t data_length = outgoing_packet->data_size;
+
+	memcpy(sbuf, &outgoing_packet->header, header_length);
+	memcpy(sbuf+header_length, outgoing_packet->datum, data_length);
+
+	butp_wtheader* pheader = (butp_wtheader*)sbuf;
+	pheader->chk = 0;
+	pheader->chk = calculate_checksum(sbuf, header_length+data_length);
+}
+
 void link_packet_to_in_transit(butp_packet* packet){
 	if(packet == NULL)
 	  return;
@@ -885,23 +887,6 @@ void link_packet_to_in_transit(butp_packet* packet){
 	  }
 	  ptr = ptr->next;
 	}while(ptr != NULL);
-}
-
-void fill_output_buffer(butp_packet* outgoing_packet){
-	if(outgoing_packet == NULL)
-	  return;
-	uint32_t header_length = get_header_length(&outgoing_packet->header);
-	uint32_t data_length = outgoing_packet->data_size;
-
-	// Make sure the outgoing packet header checksum is zero.
-	outgoing_packet->header.chk = 0;
-	memcpy(sbuf, &outgoing_packet->header, header_length);
-	memcpy(sbuf+header_length, outgoing_packet->datum, data_length);
-
-	// Calculate and insert checksum.
-	butp_wtheader* pheader = (butp_wtheader*)sbuf;
-	pheader->chk = 0;
-	pheader->chk = calculate_checksum(sbuf, header_length+data_length);
 }
 
 void unlink_packet_from_in_transit(butp_packet* packet){

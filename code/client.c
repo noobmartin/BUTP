@@ -16,8 +16,6 @@
 #include <signal.h>
 #include "butp_functions.h"
 
-int read_client_dog(char* buf, int buflen);
-
 int main(int argc, char **argv){
 	if(argc != 6){
 	  printf("Usage: hostname port packet_loss_ratio corruption_ratio continuous_transmission\n");
@@ -104,31 +102,12 @@ int main(int argc, char **argv){
 	  return -1;
 	}
 
-	char buf[100000];
-	int read = read_client_dog(buf, 100000);
-	if(read == -1){
-	  printf("Could not open file clientdog.jpg, please enter correct folder.\n");
-	  return 0;
-	}
-	
 	if(!syn_init()){
 	  printf("Could not establish connection to sleepy server.\n");
 	  return -1;
 	}
 
-	if(atoi(argv[5]) == 0)
-	  push_data_to_output_buffer(buf, read);
-
 	loop();
 
 	return 0;
-}
-
-int read_client_dog(char* buf, int buflen){
-	FILE *fp = fopen("clientdog.jpg","rb");
-	if(fp == NULL)
-	  return -1;
-	int read = fread(buf, 1, buflen, fp);
-	fclose(fp);
-	return read;
 }

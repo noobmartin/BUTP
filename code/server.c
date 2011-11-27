@@ -105,30 +105,11 @@ int main(int argc, char **argv){
 	  return -1;
 	}
 	
-	char buf[100000];
-	int read = read_server_cat(buf, 100000);
-	if(read == -1){
-	  printf("Could not open file servercat.jpg, please enter correct folder.\n");
-	  return 0;
-	}
-
 	if(!syn_listen()){
 	  return -1;
 	}
 
-	if(atoi(argv[4]) == 0)
-	  push_data_to_output_buffer(buf, read);
-
 	loop();
 
 	return 0;
-}
-
-int read_server_cat(char* buf, int buflen){
-        FILE *fp = fopen("servercat.jpg","rb");
-	if(fp == NULL)
-	  return -1;
-        int read = fread(buf, 1, buflen, fp);
-        fclose(fp);
-        return read;
 }

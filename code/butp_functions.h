@@ -139,10 +139,7 @@ int is_your_timestamp(const butp_wtheader* packet);
 // Internal protocol functions.
 void process_incoming(char* buf, const int len, butp_packet* outgoing_packet);
 void build_outgoing(butp_wtheader* packet, uint32_t packet_data_size, butp_packet* outgoing_packet);
-void fill_output_buffer(butp_packet* outgoing_packet);
+void fill_output_buffer(const butp_packet* outgoing_packet);
 void packet_timeout_function();
 int time_exceeded(struct timespec* tv);
 void adjust_packet_timeout();
-
-// Not a part of the protocol - used for testing.
-void write_received_data();
