@@ -19,7 +19,7 @@
 #include <fcntl.h>
 #include "butp_data.h"
 
-int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruption_ratio, uint8_t transmission_type){
+int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruption_ratio, uint8_t transmission_type, uint32_t run_time){
 	memset(rbuf, 0, MTU);
 	memset(sbuf, 0, MTU);
 
@@ -58,6 +58,8 @@ int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruptio
 
 	AVERAGE_BITRATE = 0;
 	AVERAGE_THROUGHPUT = 0;
+
+	SIMULATION_RUNTIME = run_time;
 
 	state = CLOSED;
 
@@ -363,9 +365,12 @@ void loop(){
 	  instant_rate_time.tv_nsec = send_time.tv_nsec;
 	}
 	
-
 	fprintf(logfile, "%f\t%i\t%f\t%f\t%f\t%f\n", run_time, your_win, byte_rate, data_byte_rate, inst_byte_rate, inst_data_byte_rate);
 
+	if((send_time.tv_sec - start_time.tv_sec) >= SIMULATION_RUNTIME){
+	  clear_lists();
+	  break;
+	}
  }while(1);
  fclose(logfile);
 }

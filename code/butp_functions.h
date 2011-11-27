@@ -97,7 +97,7 @@ typedef struct{
 }butp_packet;
 
 // External protocol interface
-int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruption_ratio, uint8_t transmission_type);      // Used by application program to set parameters
+int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruption_ratio, uint8_t transmission_type, uint32_t run_time);      // Used by application program to set parameters
 int syn_init();
 int syn_init_wait();
 int syn_listen();

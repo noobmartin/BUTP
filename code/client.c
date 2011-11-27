@@ -17,8 +17,8 @@
 #include "butp_functions.h"
 
 int main(int argc, char **argv){
-	if(argc != 6){
-	  printf("Usage: hostname port packet_loss_ratio corruption_ratio continuous_transmission\n");
+	if(argc != 7){
+	  printf("Usage: hostname port packet_loss_ratio corruption_ratio continuous_transmission simulation_runtime\n");
 	  return 0;
 	}
 	char address[256];
@@ -97,7 +97,7 @@ int main(int argc, char **argv){
           p = p->ai_next;
         }
 
-	if(!set_parameters(p, ploss, corr, atoi(argv[5]))){
+	if(!set_parameters(p, ploss, corr, atoi(argv[5]), atoi(argv[6]))){
 	  printf("Could not set network parameters.\n");
 	  return -1;
 	}

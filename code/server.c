@@ -14,11 +14,9 @@
 #include <fcntl.h>
 #include "butp_functions.h"
 
-int read_server_cat(char* buf, int buflen);
-
 int main(int argc, char **argv){
-	if(argc != 5){
-	  printf("Usage: port packet_loss_ratio corruption_ratio continuous_transmission\n");
+	if(argc != 6){
+	  printf("Usage: port packet_loss_ratio corruption_ratio continuous_transmission simulation_runtime\n");
 	  return 0;
 	}
 
@@ -101,7 +99,7 @@ int main(int argc, char **argv){
           p = p->ai_next;
         }
 
-	if(!set_parameters(p, ploss, corr, atoi(argv[4]))){
+	if(!set_parameters(p, ploss, corr, atoi(argv[4]), atoi(argv[5]))){
 	  return -1;
 	}
 	

@@ -16,7 +16,7 @@
 #include <sys/time.h>
 #include "butp_functions.h"
 
-
+uint32_t SIMULATION_RUNTIME = 0x0;
 uint8_t INSTANT_BITRATE = 0x0;
 uint8_t	AVERAGE_BITRATE = 0x0;
 uint8_t AVERAGE_THROUGHPUT = 0x0;
