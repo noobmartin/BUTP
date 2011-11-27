@@ -242,7 +242,6 @@ int syn_listen_wait(){
 
 // Continuously listen for and send data.
 void loop(){
- struct addrinfo source;
  struct timeval tv;
  tv.tv_sec = 0;
  tv.tv_usec = 100;
@@ -260,17 +259,13 @@ void loop(){
  fprintf(logfile, "runtime yourwin byterate throughput\n");
 
  do{
-	memset(rbuf, 0, MTU);
-	memset(sbuf, 0, MTU);
-	memset(&source, 0, sizeof(struct addrinfo));
-
+ 	struct addrinfo source;
 	int rval = recvfrom(sock, rbuf, MTU, 0, source.ai_addr, &source.ai_addrlen);
 
 	butp_wtheader* packet = (butp_wtheader*)rbuf;
 	network_header_to_host(packet);
 
 	butp_packet outgoing_packet;
-	memset(&outgoing_packet, 0, sizeof(butp_packet));
 	
 	if(rval == -1){
 	  if(errno != EAGAIN){
@@ -377,12 +372,10 @@ void packet_timeout_function(){
 	      your_win = receiver_window_min;
 	  }
 
-	  // Re-transmit packet!
 	  ptr->header.opt=FL_DAT;
 	  ptr->tv.tv_sec = tv.tv_sec;
 	  ptr->tv.tv_nsec = tv.tv_nsec;
 
-	  memset(sbuf, 0, MTU);
 	  memcpy(sbuf, &ptr->header, sizeof(butp_header));
 	  memcpy(sbuf+sizeof(butp_header), ptr->datum, ptr->data_size);
 
@@ -390,7 +383,6 @@ void packet_timeout_function(){
 	   
 	  host_header_to_network((butp_wtheader*)sbuf);
 	  int rval = sendto(sock, sbuf, sizeof(butp_header)+ptr->data_size, 0, (struct sockaddr*)destination->ai_addr, destination->ai_addrlen);
-	  memset(sbuf, 0, MTU);
 	  if(rval != -1)
 	    ptr->no_trans++;
 
@@ -506,20 +498,16 @@ void build_outgoing(butp_wtheader* packet, uint32_t packet_data_size, butp_packe
 	// Set packet outgoing time, used for checking packet in-transit time expiration based on current value of round-trip time.
 	clock_gettime(CLOCK_REALTIME, &first_in_buffer->tv);
 
-	// Move buffer pointer.
 	first_in_buffer = first_in_buffer->next;
 
-	// Set FL_DAT flag and values in outgoing packet.
 	outgoing_packet->header.opt|=FL_DAT;
 	outgoing_packet->header.seq = next_data_out->header.seq;
 	outgoing_packet->data_size = next_data_out->data_size;
 	outgoing_packet->datum = next_data_out->datum;
 	outgoing_packet->header.chk = next_data_out->header.chk;
 
-	// Update transmission count.
 	next_data_out->no_trans = 1;
 
-	// Link packet to in-transit list.
 	link_packet_to_in_transit(next_data_out);
 }
 
@@ -728,11 +716,9 @@ int checksum_ok(char* packet, const int packet_length){
 	uint16_t checksum = calculate_checksum(packet, packet_length);
 	if(checksum != packet_checksum){
 	  pack->chk = packet_checksum;
-	  //printf("CHECKSUM INVALID!\n");
 	  return 0;
 	}
 	pack->chk = packet_checksum;
-	//printf("CHECKSUM VALID!\n");
 	return 1;
 }
 
