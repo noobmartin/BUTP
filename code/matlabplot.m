@@ -1,32 +1,41 @@
-LogData = importdata('raw_output.dat');
-Time = LogData.data(:,1);
-Window = LogData.data(:,2);
-OutputByterate = LogData.data(:,3);
-OutputDataByterate = LogData.data(:,4);
-OutputInstantByterate = LogData.data(:,5);
-OutputInstantThroughput = LogData.data(:,6);
+RawLogData = importdata('raw_output.dat');
+RawTime = RawLogData.data(:,1);
+Window = RawLogData.data(:,2);
+OutputByterate = RawLogData.data(:,3);
+OutputDataByterate = RawLogData.data(:,4);
+OutputInstantByterate = RawLogData.data(:,5);
+OutputInstantDataByterate= RawLogData.data(:,6);
 
 figure('Name', 'Window size', 'NumberTitle', 'off');
-plot(Time, Window);
+plot(RawTime, Window);
 xlabel('Time (s)');
 ylabel('Window size (bytes)');
 
 figure('Name', 'Byte rate', 'NumberTitle', 'off');
-plot(Time, Byterate);
+plot(RawTime, OutputByterate);
 xlabel('Time (s)');
 ylabel('Byte rate (raw output)');
 
 figure('Name', 'Throughput', 'NumberTitle', 'off');
-plot(Time, Throughput);
+plot(RawTime, OutputDataByterate);
 xlabel('Time (s)');
 ylabel('Data rate (raw data output)');
 
 figure('Name', 'Instant byte rate', 'NumberTitle', 'off');
-plot(Time, InstantByterate);
+plot(RawTime, OutputInstantByterate);
 xlabel('Time (s)');
 ylabel('Instant byterate (raw output)');
 
 figure('Name', 'Instant throughput', 'NumberTitle', 'off');
-plot(Time, InstantThroughput);
+plot(RawTime, OutputInstantDataByterate);
 xlabel('Time (s)');
 ylabel('Instant data rate (raw data output)');
+
+GoodputLogData = importdata('goodput.dat');
+GoodTime = GoodputLogData(:,1);
+GoodByterate = GoodputLogData(:,2);
+
+figure('Name', 'Goodput', 'NumberTitle', 'off');
+plot(GoodTime, GoodByterate);
+xlabel('Time (s)');
+ylabel('Goodput (Bps)');

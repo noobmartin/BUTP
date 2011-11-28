@@ -62,6 +62,10 @@ int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruptio
 	SIMULATION_RUNTIME = run_time;
 
 	state = CLOSED;
+ 
+ 	raw_logfile = fopen("raw_output.dat", "w");
+	fprintf(raw_logfile, "time\twindow\tbyterate\tdatarate\tinstbyte\tinstdata\n");
+ 	goodput_logfile = fopen("goodput.dat", "w");
 
 	return 1;
 }
@@ -251,14 +255,9 @@ void loop(){
     perror("Error with setsockopt:");
  }
 
- struct timespec start_time;
  clock_gettime(CLOCK_REALTIME, &start_time);
  uint32_t bytes_sent = 0;
  uint32_t data_bytes_sent = 0;
-
- // Open a logfile
- FILE* logfile = fopen("raw_output.dat", "w");
- fprintf(logfile, "runtime yourwin byterate throughput inst_byterate inst_throughput\n");
 
  int packet_count = 0;
  int cumulative_bytes = 0;
@@ -268,13 +267,16 @@ void loop(){
  do{
  	struct addrinfo source;
 	memset(&source, 0, sizeof(struct addrinfo));
+	//memset(sbuf, 0, sizeof(butp_header));
+	//memset(rbuf, 0, sizeof(butp_header));
 	int rval = recvfrom(sock, rbuf, MTU, 0, source.ai_addr, &source.ai_addrlen);
 
 	butp_wtheader* packet = (butp_wtheader*)rbuf;
 	network_header_to_host(packet);
 
 	butp_packet outgoing_packet;
-	
+	memset(&outgoing_packet, 0, sizeof(butp_packet));
+
 	if(rval == -1){
 	  if(errno != EAGAIN){
 	    perror("Error in underlying networking");
@@ -328,6 +330,8 @@ void loop(){
 	  }
 	}
 
+	printf("SENDING PACKET WITH SEQ: %i\n", outgoing_packet.header.seq);
+
 	rval = sendto(sock, sbuf, outgoing_size, 0, (struct sockaddr*)destination->ai_addr, destination->ai_addrlen);
 
 	struct timespec send_time;
@@ -365,14 +369,15 @@ void loop(){
 	  instant_rate_time.tv_nsec = send_time.tv_nsec;
 	}
 	
-	fprintf(logfile, "%f\t%i\t%f\t%f\t%f\t%f\n", run_time, your_win, byte_rate, data_byte_rate, inst_byte_rate, inst_data_byte_rate);
+	fprintf(raw_logfile, "%f\t%i\t%f\t%f\t%f\t%f\n", run_time, your_win, byte_rate, data_byte_rate, inst_byte_rate, inst_data_byte_rate);
 
 	if((send_time.tv_sec - start_time.tv_sec) >= SIMULATION_RUNTIME){
 	  clear_lists();
 	  break;
 	}
  }while(1);
- fclose(logfile);
+ fclose(raw_logfile);
+ fclose(goodput_logfile);
 }
 
 void packet_timeout_function(){
@@ -413,7 +418,7 @@ void packet_timeout_function(){
 	  int rval = sendto(sock, sbuf, sizeof(butp_header)+ptr->data_size, 0, (struct sockaddr*)destination->ai_addr, destination->ai_addrlen);
 	  if(rval != -1)
 	    ptr->no_trans++;
-
+	  
 	  ptr = ptr->next;
 	}while(ptr != NULL);
 }
@@ -424,10 +429,39 @@ void process_incoming(char* buf, const int len, butp_packet* outgoing_packet){
 	// Process ack.
 	if(has_ack(inbound)){
 	  butp_packet* packet_in_transit = get_packet_in_transit(inbound->ack);
+	  
 	  if(packet_in_transit != NULL){
+	    printf("ACK WAS OK\n");
 	    your_win += packet_ack_window_increase;
 	    if(your_win > receiver_window_max)
 	      your_win = receiver_window_max;
+
+	    if(PACKET_COUNTER == 0){
+	      clock_gettime(CLOCK_REALTIME, &goodput_time_start);
+	    }
+
+	    PACKET_COUNTER++;
+	    printf("PACKET_COUNTER: %i\n", PACKET_COUNTER);
+	    GOODPUT_COUNTER+=packet_in_transit->data_size;
+
+	    if(PACKET_COUNTER >= 100){
+	      struct timespec goodput_final_time;
+	      clock_gettime(CLOCK_REALTIME, &goodput_final_time);
+	      
+	      float goodput_run_time = goodput_final_time.tv_sec - goodput_time_start.tv_sec;
+	      goodput_run_time += (float)((float)(goodput_final_time.tv_nsec - goodput_time_start.tv_nsec) / 1000000000);
+
+	      uint32_t goodput = GOODPUT_COUNTER/goodput_run_time;
+	
+	      float timestamp = goodput_time_start.tv_sec - start_time.tv_sec;
+	      timestamp += (float)((float)(goodput_time_start.tv_nsec - start_time.tv_nsec) / 1000000000);
+	      fprintf(goodput_logfile, "%f\t%d\n", timestamp, goodput);
+	      printf("%f\t%d\n", timestamp, goodput);
+
+	      PACKET_COUNTER = 0;
+	      GOODPUT_COUNTER = 0;
+	    }
+
 	    bytes_in_transit -= packet_in_transit->data_size;
 	    unlink_packet_from_in_transit(packet_in_transit);
 	  }
@@ -500,13 +534,16 @@ void build_outgoing(butp_wtheader* packet, uint32_t packet_data_size, butp_packe
 
 	// This just applies for continuous transmission of random data - create packets when there are none in the queue.
 	if((first_in_buffer == NULL) && CONTINUOUS_TRANSMISSION){
-	  butp_packet* packet = malloc(sizeof(butp_packet));
-	  memset(packet, 0, sizeof(butp_packet));
-	  first_in_buffer = packet;
-	  packet->header.seq = my_seq+MTU-FULL_HEADER_SIZE;
-	  packet->data_size = MTU-FULL_HEADER_SIZE;
-	  packet->datum = malloc(packet->data_size);
-	  my_seq += packet->data_size;
+	  if(bytes_in_transit+MTU-FULL_HEADER_SIZE < your_win){
+	    butp_packet* packet = malloc(sizeof(butp_packet));
+	    memset(packet, 0, sizeof(butp_packet));
+	    first_in_buffer = packet;
+	    packet->header.seq = my_seq+MTU-FULL_HEADER_SIZE;
+	    printf("CREATING PACKET WITH SEQ: %i\n", packet->header.seq);
+	    packet->data_size = MTU-FULL_HEADER_SIZE;
+	    packet->datum = malloc(packet->data_size);
+	    my_seq += packet->data_size;
+	  }
 	}
 	
 	// Pull packet from output buffer.
@@ -516,12 +553,14 @@ void build_outgoing(butp_wtheader* packet, uint32_t packet_data_size, butp_packe
 	  return;
 	}
 
-	if((next_data_out == NULL))
+	if((next_data_out == NULL)){
 	  return;
+	}
 
 	// We must not ignore the receiver window size!	
-	if(bytes_in_transit+next_data_out->data_size > your_win)
+	if(bytes_in_transit+next_data_out->data_size > your_win){
 	  return;
+	}
 
 	// Set packet outgoing time, used for checking packet in-transit time expiration based on current value of round-trip time.
 	clock_gettime(CLOCK_REALTIME, &first_in_buffer->tv);

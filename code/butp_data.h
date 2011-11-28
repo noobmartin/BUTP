@@ -16,6 +16,8 @@
 #include <sys/time.h>
 #include "butp_functions.h"
 
+uint32_t GOODPUT_COUNTER = 0x0;
+uint8_t PACKET_COUNTER = 0x0;
 uint32_t SIMULATION_RUNTIME = 0x0;
 uint8_t INSTANT_BITRATE = 0x0;
 uint8_t	AVERAGE_BITRATE = 0x0;
@@ -28,7 +30,6 @@ uint8_t CORRUPTION_RATIO = 75;
 uint16_t RTT_RAND_MODULUS = 0x6;
 uint16_t RTT_RAND_VALUE = 0x3;
 uint16_t RTT = 0x0;
-//uint16_t MTU = 0x240;
 uint16_t MTU = 0x500;
 uint16_t MSN = 0xFFFF;
 uint32_t my_win = 0x0;
@@ -47,11 +48,15 @@ int	 transmission_finished = 0x0;
 int	 round_trip_time_factor = 0x400;
 int	 data_written = 0x0;
 int	 state = 0x0;
+FILE*	 goodput_logfile = 0;
+FILE*	 raw_logfile = 0;
 
 // Packet ack timeout. Start with 500ms
 struct timespec packet_timeout_data = {0,500000};
 struct itimerval packet_timeout = {{0,500000},{0,500000}};
 struct timespec packet_loop_interval_sleep = {0, 100000};
+struct timespec start_time;
+struct timespec goodput_time_start;
 
 char sbuf[0xFFFF];
 char rbuf[0xFFFF];
