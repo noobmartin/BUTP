@@ -5,6 +5,7 @@ OutputByterate = RawLogData.data(:,3);
 OutputDataByterate = RawLogData.data(:,4);
 OutputInstantByterate = RawLogData.data(:,5);
 OutputInstantDataByterate= RawLogData.data(:,6);
+RoundTripTime = RawLogData.data(:,7);
 
 figure('Name', 'Window size', 'NumberTitle', 'off');
 plot(RawTime, Window);
@@ -30,6 +31,11 @@ figure('Name', 'Instant throughput', 'NumberTitle', 'off');
 plot(RawTime, OutputInstantDataByterate);
 xlabel('Time (s)');
 ylabel('Instant data rate (raw data output)');
+
+figure('Name', 'Round trip time', 'NumberTitle', 'off');
+plot(RawTime, RoundTripTime);
+xlabel('Time (s)');
+ylabel('Time (ns)');
 
 GoodputLogData = importdata('goodput.dat');
 GoodTime = GoodputLogData(:,1);

@@ -64,7 +64,7 @@ int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruptio
 	state = CLOSED;
  
  	raw_logfile = fopen("raw_output.dat", "w");
-	fprintf(raw_logfile, "time\twindow\tbyterate\tdatarate\tinstbyte\tinstdata\n");
+	fprintf(raw_logfile, "time\twindow\tbyterate\tdatarate\tinstbyte\tinstdata\tRTT\n");
  	goodput_logfile = fopen("goodput.dat", "w");
 
 	return 1;
@@ -369,7 +369,7 @@ void loop(){
 	  instant_rate_time.tv_nsec = send_time.tv_nsec;
 	}
 	
-	fprintf(raw_logfile, "%f\t%i\t%f\t%f\t%f\t%f\n", run_time, your_win, byte_rate, data_byte_rate, inst_byte_rate, inst_data_byte_rate);
+	fprintf(raw_logfile, "%f\t%i\t%f\t%f\t%f\t%f\t%i\n", run_time, your_win, byte_rate, data_byte_rate, inst_byte_rate, inst_data_byte_rate, RTT);
 
 	if((send_time.tv_sec - start_time.tv_sec) >= SIMULATION_RUNTIME){
 	  clear_lists();
