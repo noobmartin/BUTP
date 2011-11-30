@@ -330,7 +330,7 @@ void loop(){
 	  }
 	}
 
-	printf("SENDING PACKET WITH SEQ: %i\n", outgoing_packet.header.seq);
+	printf("SENDING PACKET WITH SEQ: %i ACK: %i\n", outgoing_packet.header.seq, outgoing_packet.header.ack);
 
 	rval = sendto(sock, sbuf, outgoing_size, 0, (struct sockaddr*)destination->ai_addr, destination->ai_addrlen);
 
@@ -375,6 +375,12 @@ void loop(){
 	  clear_lists();
 	  break;
 	}
+
+	struct timespec st;
+	st.tv_sec = 0;
+	st.tv_nsec = RTT/10;
+	nanosleep(&st, 0);
+
  }while(1);
  fclose(raw_logfile);
  fclose(goodput_logfile);
@@ -431,7 +437,6 @@ void process_incoming(char* buf, const int len, butp_packet* outgoing_packet){
 	  butp_packet* packet_in_transit = get_packet_in_transit(inbound->ack);
 	  
 	  if(packet_in_transit != NULL){
-	    printf("ACK WAS OK\n");
 	    your_win += packet_ack_window_increase;
 	    if(your_win > receiver_window_max)
 	      your_win = receiver_window_max;
@@ -441,7 +446,6 @@ void process_incoming(char* buf, const int len, butp_packet* outgoing_packet){
 	    }
 
 	    PACKET_COUNTER++;
-	    printf("PACKET_COUNTER: %i\n", PACKET_COUNTER);
 	    GOODPUT_COUNTER+=packet_in_transit->data_size;
 
 	    if(PACKET_COUNTER >= 100){
@@ -539,7 +543,6 @@ void build_outgoing(butp_wtheader* packet, uint32_t packet_data_size, butp_packe
 	    memset(packet, 0, sizeof(butp_packet));
 	    first_in_buffer = packet;
 	    packet->header.seq = my_seq+MTU-FULL_HEADER_SIZE;
-	    printf("CREATING PACKET WITH SEQ: %i\n", packet->header.seq);
 	    packet->data_size = MTU-FULL_HEADER_SIZE;
 	    packet->datum = malloc(packet->data_size);
 	    my_seq += packet->data_size;
