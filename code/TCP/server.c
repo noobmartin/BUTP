@@ -12,11 +12,12 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include "butp_functions.h"
+#include <sys/time.h>
+#include <time.h>
 
 int main(int argc, char **argv){
-	if(argc != 9){
-	  printf("Usage: port packet_loss_ratio corruption_ratio continuous_transmission simulation_runtime byte_count wireless_connection active_queue_management\n");
+	if(argc != 4){
+	  printf("Usage: port simulation_runtime byte_count\n");
 	  return 0;
 	}
 
@@ -35,22 +36,10 @@ int main(int argc, char **argv){
          exit(1);
         }
 
-	uint8_t ploss = atoi(argv[2]);
-	if(ploss > 100){
-	  printf("Packet loss ratio cannot exceed 100 percent.\n");
-	  return 0;
-	}
-
-	uint8_t corr = atoi(argv[3]);
-	if(corr > 100){
-	  printf("Corruption ratio cannot exceed 100 percent.\n");
-	  return 0;
-	}
-
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(struct addrinfo));
 	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_DGRAM;
+	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_PASSIVE;
 
 	int status;
@@ -99,18 +88,41 @@ int main(int argc, char **argv){
           p = p->ai_next;
         }
 
-	if(!set_parameters(p, ploss, corr, atoi(argv[4]), atoi(argv[5]), atoi(argv[6]), atoi(argv[7]), atoi(argv[8]))){
-	  return -1;
-	}
+	char* buf = malloc(atoi(argv[3]));
 
-	char* buf = malloc(atoi(argv[6]));
-	push_data_to_output_buffer(buf, atoi(argv[6]));
+	int sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+	bind(sock, p->ai_addr, p->ai_addrlen);
+	listen(sock, 1);
 
-	if(!syn_listen()){
-	  return -1;
-	}
+	int nsock = accept(sock, 0, 0);
+	int bytes_sent = 0;
 
-	loop();
+	void* ptr = buf;
+
+	int bytes_per_round = 15000;
+	
+	FILE* goodput_logfile = fopen("server_goodput.dat", "w");
+
+	struct timespec goodput_time_start = {0,0};
+
+	clock_gettime(CLOCK_REALTIME, &goodput_time_start);
+
+	do{
+	  struct timespec send_time;
+	  clock_gettime(CLOCK_REALTIME, &send_time);
+
+	  float timestamp = send_time.tv_sec - goodput_time_start.tv_sec;
+	  timestamp += (float)((float)(send_time.tv_nsec - goodput_time_start.tv_nsec) / 1000000000);
+
+	  fprintf(goodput_logfile,"%f\t%d\n", timestamp, bytes_per_round);
+	  send(nsock, ptr, bytes_per_round, 0);
+	  ptr+= bytes_per_round;
+	  bytes_sent+=bytes_per_round;
+	}while(bytes_sent < atoi(argv[3]));
+
+
+	fclose(goodput_logfile);
+	free(buf);
 
 	return 0;
 }

@@ -17,8 +17,8 @@
 #include "butp_functions.h"
 
 int main(int argc, char **argv){
-	if(argc != 7){
-	  printf("Usage: hostname port packet_loss_ratio corruption_ratio continuous_transmission simulation_runtime\n");
+	if(argc != 10){
+	  printf("Usage: hostname port packet_loss_ratio corruption_ratio continuous_transmission simulation_runtime byte_count wireless_connection active_queue_management\n");
 	  return 0;
 	}
 	char address[256];
@@ -97,10 +97,13 @@ int main(int argc, char **argv){
           p = p->ai_next;
         }
 
-	if(!set_parameters(p, ploss, corr, atoi(argv[5]), atoi(argv[6]))){
+	if(!set_parameters(p, ploss, corr, atoi(argv[5]), atoi(argv[6]), atoi(argv[7]), atoi(argv[8]), atoi(argv[9]))){
 	  printf("Could not set network parameters.\n");
 	  return -1;
 	}
+
+	char* buf = malloc(atoi(argv[7]));
+	push_data_to_output_buffer(buf, atoi(argv[7]));
 
 	if(!syn_init()){
 	  printf("Could not establish connection to sleepy server.\n");

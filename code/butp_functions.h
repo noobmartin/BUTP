@@ -3,6 +3,26 @@
  */
 
 enum{
+  NONE = 0,
+  RED = 1,
+  BLUE = 2,
+  DSRED = 3,
+  SDRED = 4
+};
+
+enum{
+  RETRANSMISSION_TIMEOUT,
+  ACK_RECEIVED
+};
+
+enum{
+  BOOST,
+  GLIDE,
+  SNEAK,
+  RESTORE
+};
+
+enum{
   FL_WIN = 0x8000,
   FL_FIN = 0x4000,
   FL_TME = 0x2000,
@@ -12,6 +32,7 @@ enum{
   FL_MTM = 0x200,
   FL_ABO = 0x100,
   FL_FAC = 0x80,
+  FL_WIR = 0x40,
   NORMAL_HEADER_SIZE = 0xC,
   FULL_HEADER_SIZE = 0x14,
   EMPTY_PACKET = 0x4D80
@@ -23,7 +44,8 @@ enum{
   SYN_INIT,
   SYN_INIT_WAIT,
   SYN_LISTEN,
-  SYN_LISTEN_WAIT
+  SYN_LISTEN_WAIT,
+  KILL
 };
 
 /* Header description
@@ -34,7 +56,7 @@ enum{
  |___________________________________|
  |        Ack.     number            |
  |___________________________________|
- | Checksum     |W|F|T|S|A|D|M|B|Z|R |
+ | Checksum     |W|F|T|S|A|D|M|B|Z|Q|R |
  |______________|_|_|________________|
  |******* Window size *************  | <- Optional
  |___________________________________|
@@ -50,6 +72,7 @@ enum{
   The M flag indicates that if the timestamp is present, then the source of this packet set this timestamp. Otherwise, the timestamp is a copy of the value injected by the other host, which is now being transmitted back to the source.
   The B flag indicates that the connection should be terminated and any received data should be deleted. B for aBort.
   The Z flag indicates that a previous FIN flag is now acknowledged (FIN-ACK).
+  The Q flag indicates that this is a wireless connection.
   The RESERVED bits are all set to zero and ignored.
 
  */
@@ -97,7 +120,7 @@ typedef struct{
 }butp_packet;
 
 // External protocol interface
-int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruption_ratio, uint8_t transmission_type, uint32_t run_time);      // Used by application program to set parameters
+int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruption_ratio, uint8_t transmission_type, uint32_t run_time, uint32_t transmission_count, uint8_t wireless, uint8_t active_queue_management);      // Used by application program to set parameters
 int syn_init();
 int syn_init_wait();
 int syn_listen();
@@ -133,13 +156,17 @@ int has_timestamp(const butp_wtheader* packet);
 int has_syn(const butp_wtheader* packet);
 int has_fin(const butp_wtheader* packet);
 int has_abort(const butp_wtheader* packet);
-int has_fin_ack(butp_wtheader* packet);
+int has_fin_ack(const butp_wtheader* packet);
+int has_wireless(const butp_wtheader* packet);
 int is_your_timestamp(const butp_wtheader* packet);
 
 // Internal protocol functions.
-void process_incoming(char* buf, const int len, butp_packet* outgoing_packet);
+int process_incoming(char* buf, const int len, butp_packet* outgoing_packet);
 void build_outgoing(butp_wtheader* packet, uint32_t packet_data_size, butp_packet* outgoing_packet);
 void fill_output_buffer(const butp_packet* outgoing_packet);
 void packet_timeout_function();
 int time_exceeded(struct timespec* tv);
 void adjust_packet_timeout();
+void handle_intermittent_syn();
+void send_abort();
+void modify_congestion_window(uint8_t cause);

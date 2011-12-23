@@ -1,0 +1,44 @@
+Linux 3.0.6-gentoo (C2H5OH) 	12/03/11 	_x86_64_	(4 CPU)
+
+22:27:35          PID    %usr %system  %guest    %CPU   CPU  Command
+
+22:27:36          PID    %usr %system  %guest    %CPU   CPU  Command
+
+22:27:37          PID    %usr %system  %guest    %CPU   CPU  Command
+22:27:38         2165    1.00    0.00    0.00    0.25     1  wicd-client
+
+22:27:38          PID    %usr %system  %guest    %CPU   CPU  Command
+
+22:27:39          PID    %usr %system  %guest    %CPU   CPU  Command
+
+22:27:40          PID    %usr %system  %guest    %CPU   CPU  Command
+
+22:27:41          PID    %usr %system  %guest    %CPU   CPU  Command
+22:27:42         3122    3.00   52.00    0.00   13.65     1  client
+
+22:27:42          PID    %usr %system  %guest    %CPU   CPU  Command
+22:27:43         3122    6.00   93.00    0.00   24.81     1  client
+
+22:27:43          PID    %usr %system  %guest    %CPU   CPU  Command
+22:27:44         3122    5.00   95.00    0.00   25.00     1  client
+
+22:27:44          PID    %usr %system  %guest    %CPU   CPU  Command
+22:27:45         3122    5.00   94.00    0.00   24.81     1  client
+
+22:27:45          PID    %usr %system  %guest    %CPU   CPU  Command
+22:27:46         3122    7.00   93.00    0.00   24.94     1  client
+
+22:27:46          PID    %usr %system  %guest    %CPU   CPU  Command
+22:27:47         3122    5.00   94.00    0.00   24.81     1  client
+
+22:27:47          PID    %usr %system  %guest    %CPU   CPU  Command
+22:27:48         3122    5.00   94.00    0.00   24.75     1  client
+
+22:27:48          PID    %usr %system  %guest    %CPU   CPU  Command
+22:27:49         3122    6.00   94.00    0.00   25.00     1  client
+
+22:27:49          PID    %usr %system  %guest    %CPU   CPU  Command
+
+22:27:50          PID    %usr %system  %guest    %CPU   CPU  Command
+
+22:27:51          PID    %usr %system  %guest    %CPU   CPU  Command

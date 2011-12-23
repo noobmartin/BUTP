@@ -17,9 +17,10 @@
 #include <signal.h>
 #include <sys/time.h>
 #include <fcntl.h>
+#include <math.h>
 #include "butp_data.h"
 
-int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruption_ratio, uint8_t transmission_type, uint32_t run_time){
+int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruption_ratio, uint8_t transmission_type, uint32_t run_time, uint32_t transmission_count, uint8_t wireless, uint8_t active_queue_management){
 	memset(rbuf, 0, MTU);
 	memset(sbuf, 0, MTU);
 
@@ -31,8 +32,8 @@ int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruptio
 	in_transit_first = NULL;
 	received_ready_first = NULL;
 	
-	my_win = receiver_window_min;
-	your_win = receiver_window_min;
+	my_win = receiver_window_max;
+	congestion_win = receiver_window_max;
 
 	transmission_finished = 0;
 	reception_finished = 0;
@@ -60,6 +61,14 @@ int set_parameters(struct addrinfo* dest, uint8_t packet_loss, uint8_t corruptio
 	AVERAGE_THROUGHPUT = 0;
 
 	SIMULATION_RUNTIME = run_time;
+
+	TRANSMISSION_COUNT = transmission_count;
+
+	WIRELESS_CONNECTION = wireless;
+
+	TRANSMISSION_MODE = BOOST;
+
+	ACTIVE_QUEUE_MANAGEMENT = active_queue_management;
 
 	state = CLOSED;
  
@@ -120,9 +129,6 @@ int syn_init_wait(){
 	network_header_to_host(hdr);
 
 	your_seq = hdr->seq;
-	if(has_window(hdr))
-	  your_win = hdr->window;
-	
 	if(!has_syn(hdr))
 	  return -1;
 
@@ -132,10 +138,16 @@ int syn_init_wait(){
 	if((hdr->ack) != my_seq)
 	  return -1;
 
+	if(has_wireless(hdr))
+	  WIRELESS_CONNECTION = 1;
+
 	struct timespec ti;
 	clock_gettime(CLOCK_REALTIME, &ti);
 	RTT = (uint32_t)(ti.tv_nsec) - hdr->timestamp;
 	adjust_packet_timeout();
+	
+	if(has_window(hdr))
+	  receiver_window_max = hdr->window;
 
 	butp_wtheader packet;
 	packet.ack = your_seq;
@@ -181,7 +193,7 @@ int syn_listen(){
 
 	if(hdr->opt&FL_WIN && (!(hdr->opt&FL_TME))){
 	  butp_wheader* whdr = (butp_wheader*)rbuf;
-	  your_win = whdr->window;
+	  receiver_window_max = whdr->window;
 	}
 
 	butp_wtheader packet;
@@ -207,6 +219,9 @@ int syn_listen(){
 	  packet.timestamp = hdr->timestamp;
 	  psize+=0x8;
 	}
+
+	if(has_wireless(hdr))
+	  WIRELESS_CONNECTION = 1;
 
 	host_header_to_network(&packet);
 
@@ -248,6 +263,38 @@ int syn_listen_wait(){
 
 // Continuously listen for and send data.
 void loop(){
+int i,avg = 0;
+int count = -1;
+int p_b,pb_avg=0;
+float init_wq,wq = 0.002;
+float pa,maxp, pb,alpha,beta,gama,delta1,delta2 =0;
+int size =INPUT_QUEUE_SIZE ;
+int m,pm,minth,maxth,Q,init_maxTh,k,kl,kh,km,C1,C2,G1,G2 = 0;
+C1 = 12;
+C2 = 15;
+G1 = 54;
+G2 = 18;
+maxp = 0.8;
+minth = 5;
+maxth = 3* minth;
+
+pb = 0.1;
+gama = 0.1;
+
+init_maxTh = Q = size;
+init_wq = 0.02;
+k= 4;
+unsigned int random_value = 0x0;
+struct timeval now;
+
+time_t ptime,qtime,freeze_time;
+
+
+
+gettimeofday(&now, NULL);
+ptime = now.tv_usec;
+qtime = now.tv_usec-10; //has to be done at when the que
+
  struct timeval tv;
  tv.tv_sec = 0;
  tv.tv_usec = 100;
@@ -262,13 +309,14 @@ void loop(){
  int packet_count = 0;
  int cumulative_bytes = 0;
  int cumulative_data_bytes = 0;
- struct timespec instant_rate_time;
+ struct timespec instant_rate_time = {0,0};
 
  do{
+ 	struct timespec st = {0,400};
+	nanosleep(&st,NULL);
+	
  	struct addrinfo source;
 	memset(&source, 0, sizeof(struct addrinfo));
-	//memset(sbuf, 0, sizeof(butp_header));
-	//memset(rbuf, 0, sizeof(butp_header));
 	int rval = recvfrom(sock, rbuf, MTU, 0, source.ai_addr, &source.ai_addrlen);
 
 	butp_wtheader* packet = (butp_wtheader*)rbuf;
@@ -286,8 +334,9 @@ void loop(){
 	  }
 	}
 	else{
-	  if(!same_user(&source, destination))
+	  if(!same_user(&source, destination)){
 	    continue;
+	  }
 	
 	  int skip = 0;
 	  if(SIMULATE_LOSSY_MEDIUM){
@@ -299,20 +348,205 @@ void loop(){
 	      process_incoming(rbuf, rval, &outgoing_packet);
 	    }
 	  }
+else if(ACTIVE_QUEUE_MANAGEMENT == RED){
+        // Number of bytes in input queue is called BYTES_IN_INPUT_QUEUE.
+        // Max size of input buffer is called INPUT_QUEUE_SIZE.
+
+        for( i=0; i<BYTES_IN_INPUT_QUEUE;i++)//packet arrival
+        {
+          do{
+            avg = size/BYTES_IN_INPUT_QUEUE;
+            if (avg)// queue
+            {
+                avg = (1-wq)*avg +wq;
+            }
+            else
+            {
+                m = ptime-qtime;
+                avg = pow((1-wq),m) * avg;
+            }
+            if((minth <= avg)&&(avg < maxth))
+            {
+                count++;
+                pb = maxp * ((avg-minth)/(maxth-minth));
+                pa = pb/(1-count * pb);
+                count = 0;
+                process_incoming(rbuf,rval,&outgoing_packet);
+            }
+            else if(maxth < avg)
+            {
+                count = 0;
+                memset(packet,0,sizeof(butp_header));
+            }
+            else
+            {
+                count = -1;
+                process_incoming(rbuf,rval,&outgoing_packet);
+            }
+	   }while( BYTES_IN_INPUT_QUEUE == 0);
+           qtime = ptime;
+         }
+	 if(BYTES_IN_INPUT_QUEUE == 0)
+	   process_incoming(rbuf, rval, &outgoing_packet);
+}
+else if(ACTIVE_QUEUE_MANAGEMENT == BLUE){
+        delta1 = 0.00025;
+        delta2 = 0.000025;
+        freeze_time = 0.01;//micro seconds
+        pm = 0.05;
+        if(Q > BYTES_IN_INPUT_QUEUE )
+        {
+		printf("Q: %i bytes_in_input: %i\n", Q, BYTES_IN_INPUT_QUEUE);
+		printf("ptime: %i qtime: %i freeze: %i\n", ptime, qtime, freeze_time);
+                if((ptime - qtime ) >= freeze_time)
+                {
+                        pm += delta1;
+                        qtime = ptime;
+                        process_incoming(rbuf,rval,&outgoing_packet);
+                }
+        }
+        else
+        {
+                if((ptime - qtime ) > freeze_time)
+                {
+                        pm -= delta2;
+                        qtime = ptime;
+                        memset(packet,0,sizeof(butp_header));
+
+                }
+        }
+}
+else if(ACTIVE_QUEUE_MANAGEMENT == DSRED){
+        for(i = 0; i<BYTES_IN_INPUT_QUEUE;i++)
+        {
+                avg = (1-wq) *avg +wq;
+                kl = maxth;
+                kh = minth;
+                km = 0.5 *(kl-kh);
+
+                alpha = 2*(1-gama)/(kh-kl);
+                beta = 2*gama/(kh-kl);
+
+        	if(avg < kl)
+        	{
+                  pb_avg = 0;
+                  process_incoming(rbuf,rval,&outgoing_packet);
+        	}
+        	else if((kl<=avg) &&(avg <=km))
+        	{
+                  pb_avg = alpha *(avg - kl);
+                  random_value = random();
+                  memset(packet,0,sizeof(butp_header));
+        	}
+        	else if((kh <= avg)&&(kh <= size))
+        	{
+                  pb_avg = 1;
+                  memset(packet,0,sizeof(butp_header));
+        	}
+        }
+        if(pb_avg > 0 && (size/pb_avg > random_value/pb_avg))
+        {       
+		pb_avg = 1;
+                memset(packet,0,sizeof(butp_header));
+        }
+	if(BYTES_IN_INPUT_QUEUE == 0)
+	  process_incoming(rbuf, rval, &outgoing_packet);
+}
+else if(ACTIVE_QUEUE_MANAGEMENT == SDRED){
+        for(i = 0; i<BYTES_IN_INPUT_QUEUE;i++)
+        {
+		avg = size/BYTES_IN_INPUT_QUEUE;
+         	if (avg)// queue
+        	{
+                  avg = (1-wq) *avg +wq;
+        	}
+        	else
+        	{
+                  m = ptime-qtime;
+                  avg = pow((1-wq),m) * avg;
+        	}
+        	if(minth > avg){
+                  count = -1;
+                  process_incoming(rbuf,rval,&outgoing_packet);
+        	}
+        	else if(init_maxTh  > avg)
+        	{
+                  maxth = init_maxTh ;
+                  wq = init_wq;
+                  pb = 1 ;
+        	}
+        	else if(0.7 *Q > avg)
+        	{
+                  maxth = init_maxTh +0.1*Q;
+                  wq = k * init_wq;
+                  pb = 1;
+        	}
+        	else if(0.8*Q > avg)
+        	{
+                  maxth = init_maxTh +0.2*Q;
+                  wq = k*k * init_wq;
+                  pb = 1;
+        	}
+        	else if(0.9*Q > avg)
+        	{
+                  maxth = init_maxTh +0.3*Q;
+                  wq = k*k*k * init_wq;
+                  pb = 1 ;
+        	}
+		else
+                  memset(packet,0,sizeof(butp_header));
+
+        	if(pb)
+        	{
+                  p_b = ((C1 * avg ) >> BYTES_IN_INPUT_QUEUE) - C2;
+                  if(p_b)
+                    memset(packet,0,sizeof(butp_header));
+        	}
+        	else{
+                  p_b = ((G1 * avg ) >> BYTES_IN_INPUT_QUEUE) - G2;
+                  process_incoming(rbuf,rval,&outgoing_packet);
+        	}
+
+        	count++;
+        	if(count > 0 && p_b >0 && count > random_value/p_b)
+        	{
+                  count = 0;
+                  random_value = (random() >> 5) & 0xFFFF;
+                  p_b = 1;
+        	}
+       		if(count == 0)
+        	{
+                  random_value = (random() >> 5) & 0xFFFF;
+                  p_b = 0;
+        	}
+        }
+	if(BYTES_IN_INPUT_QUEUE == 0)
+	  process_incoming(rbuf, rval, &outgoing_packet);
+}
+
 	  else{
 	    process_incoming(rbuf, rval, &outgoing_packet);
 	  }
+
+	  if(rval == -1){
+	    break;
+	  }
 	}
+
+	if( (TRANSMISSION_COUNT != 0) && (ACKED_BYTE_COUNT >= TRANSMISSION_COUNT) ){
+	  clear_lists();
+	  send_abort();
+	  state = KILL;
+	  break;
+	}
+
+	packet_timeout_function();
 
 	build_outgoing(packet, get_data_length(packet, rval), &outgoing_packet);
 	
-	packet_timeout_function();
-	
-	uint16_t options = outgoing_packet.header.opt;
-	if((options&EMPTY_PACKET) == 0){
+	if(!has_ack(&outgoing_packet.header) && !has_data(&outgoing_packet.header))
 	  continue;
-	}
-
+	
 	uint32_t outgoing_size = outgoing_packet.data_size + get_header_length(&outgoing_packet.header);
 
 	fill_output_buffer(&outgoing_packet);
@@ -330,7 +564,6 @@ void loop(){
 	  }
 	}
 
-	printf("SENDING PACKET WITH SEQ: %i ACK: %i\n", outgoing_packet.header.seq, outgoing_packet.header.ack);
 
 	rval = sendto(sock, sbuf, outgoing_size, 0, (struct sockaddr*)destination->ai_addr, destination->ai_addrlen);
 
@@ -352,8 +585,8 @@ void loop(){
 	cumulative_bytes+=outgoing_size;
 	cumulative_data_bytes+=outgoing_packet.data_size;
 
-	float inst_byte_rate;
-	float inst_data_byte_rate;
+	float inst_byte_rate = 0;
+	float inst_data_byte_rate = 0;
 	if(packet_count == 100){
 	  float short_run_time = send_time.tv_sec - instant_rate_time.tv_sec;
 	  short_run_time += (float)((float)(send_time.tv_nsec - instant_rate_time.tv_nsec) / 1000000000);
@@ -367,23 +600,41 @@ void loop(){
 
 	  instant_rate_time.tv_sec = send_time.tv_sec;
 	  instant_rate_time.tv_nsec = send_time.tv_nsec;
+	  
+	  fprintf(raw_logfile, "%f\t%i\t%f\t%f\t%f\t%f\t%i\n", run_time, congestion_win, byte_rate, data_byte_rate, inst_byte_rate, inst_data_byte_rate, RTT);
 	}
 	
-	fprintf(raw_logfile, "%f\t%i\t%f\t%f\t%f\t%f\t%i\n", run_time, your_win, byte_rate, data_byte_rate, inst_byte_rate, inst_data_byte_rate, RTT);
 
-	if((send_time.tv_sec - start_time.tv_sec) >= SIMULATION_RUNTIME){
+	if( (SIMULATION_RUNTIME != 0) && ( (send_time.tv_sec - start_time.tv_sec) >= SIMULATION_RUNTIME) ){
 	  clear_lists();
+	  send_abort();
+	  state = KILL;
 	  break;
 	}
 
-	struct timespec st;
-	st.tv_sec = 0;
-	st.tv_nsec = RTT/10;
-	nanosleep(&st, 0);
-
  }while(1);
- fclose(raw_logfile);
- fclose(goodput_logfile);
+   switch(state){
+	case KILL:
+	  fclose(raw_logfile);
+	  fclose(goodput_logfile);
+	  break;
+   }
+
+   return;
+}
+
+void send_abort(){
+	butp_header* outgoing = (butp_header*)sbuf;
+
+	memset(outgoing, 0, sizeof(butp_header));
+	outgoing->opt = FL_ABO;
+
+	outgoing->opt = htons(outgoing->opt);
+	
+	int i;
+	for(i = 0; i < 10; i++){
+	 sendto(sock, outgoing, sizeof(butp_header), 0, (struct sockaddr*)destination->ai_addr, destination->ai_addrlen);
+	}
 }
 
 void packet_timeout_function(){
@@ -392,6 +643,8 @@ void packet_timeout_function(){
 	
 	struct timespec tv;
 	struct timespec time_in_transit;
+	static struct timespec last_time = {0,0};
+	static struct timespec last_run_diff = {0,0};
 	clock_gettime(CLOCK_REALTIME, &tv);
 
 	// Don't bother with re-transmissions if the first packet in transmission hasn't timed out.
@@ -400,36 +653,40 @@ void packet_timeout_function(){
 	time_in_transit.tv_nsec = tv.tv_nsec - ptr->tv.tv_nsec;
 	if(!time_exceeded(&time_in_transit))
 	  return;
-	
+
+	last_run_diff.tv_sec = tv.tv_sec - last_time.tv_sec;
+	last_run_diff.tv_nsec = tv.tv_nsec - last_time.tv_nsec;
+
+	// Only re-transmit if at least a timeout interval has passed since the last re-transmission.
+	//if(tv.tv_sec - last_time.tv_sec < 1)
+	  //return;
+	if(!time_exceeded(&last_run_diff))
+	  return;
+
+	modify_congestion_window(RETRANSMISSION_TIMEOUT);
+
 	do{
-	  // Shrink window for first re-transmission.
-	  if(ptr->no_trans == 1){
-	    if(your_win - packet_timeout_window_shrink > receiver_window_min){
-	      your_win -= packet_timeout_window_shrink;
-	    }
-	    else
-	      your_win = receiver_window_min;
-	  }
+	ptr->header.opt=FL_DAT;
 
-	  ptr->header.opt=FL_DAT;
-	  ptr->tv.tv_sec = tv.tv_sec;
-	  ptr->tv.tv_nsec = tv.tv_nsec;
+	memcpy(sbuf, &ptr->header, sizeof(butp_header));
+	memcpy(sbuf+sizeof(butp_header), ptr->datum, ptr->data_size);
 
-	  memcpy(sbuf, &ptr->header, sizeof(butp_header));
-	  memcpy(sbuf+sizeof(butp_header), ptr->datum, ptr->data_size);
-
-	  ((butp_header*)sbuf)->chk = calculate_checksum(sbuf, sizeof(butp_header)+ptr->data_size);
+	((butp_header*)sbuf)->chk = calculate_checksum(sbuf, sizeof(butp_header)+ptr->data_size);
 	   
-	  host_header_to_network((butp_wtheader*)sbuf);
-	  int rval = sendto(sock, sbuf, sizeof(butp_header)+ptr->data_size, 0, (struct sockaddr*)destination->ai_addr, destination->ai_addrlen);
-	  if(rval != -1)
-	    ptr->no_trans++;
-	  
-	  ptr = ptr->next;
+	host_header_to_network((butp_wtheader*)sbuf);
+	int rval = sendto(sock, sbuf, sizeof(butp_header)+ptr->data_size, 0, (struct sockaddr*)destination->ai_addr, destination->ai_addrlen);
+	if(rval != -1)
+	  ptr->no_trans++;
+	
+	ptr = ptr->next;
+
 	}while(ptr != NULL);
+
+	clock_gettime(CLOCK_REALTIME, &last_time);
+	printf("Re-transmitted packet, bytes in transit: %i\n", bytes_in_transit);
 }
 
-void process_incoming(char* buf, const int len, butp_packet* outgoing_packet){
+int process_incoming(char* buf, const int len, butp_packet* outgoing_packet){
 	butp_wtheader* inbound = (butp_wtheader*)buf;
 
 	// Process ack.
@@ -437,16 +694,17 @@ void process_incoming(char* buf, const int len, butp_packet* outgoing_packet){
 	  butp_packet* packet_in_transit = get_packet_in_transit(inbound->ack);
 	  
 	  if(packet_in_transit != NULL){
-	    your_win += packet_ack_window_increase;
-	    if(your_win > receiver_window_max)
-	      your_win = receiver_window_max;
-
+	    modify_congestion_window(ACK_RECEIVED);
 	    if(PACKET_COUNTER == 0){
 	      clock_gettime(CLOCK_REALTIME, &goodput_time_start);
 	    }
 
 	    PACKET_COUNTER++;
 	    GOODPUT_COUNTER+=packet_in_transit->data_size;
+
+	    ACKED_BYTE_COUNT += packet_in_transit->data_size;
+
+	    printf("Acked bytes: %i\n", ACKED_BYTE_COUNT);
 
 	    if(PACKET_COUNTER >= 100){
 	      struct timespec goodput_final_time;
@@ -460,14 +718,15 @@ void process_incoming(char* buf, const int len, butp_packet* outgoing_packet){
 	      float timestamp = goodput_time_start.tv_sec - start_time.tv_sec;
 	      timestamp += (float)((float)(goodput_time_start.tv_nsec - start_time.tv_nsec) / 1000000000);
 	      fprintf(goodput_logfile, "%f\t%d\n", timestamp, goodput);
-	      printf("%f\t%d\n", timestamp, goodput);
 
 	      PACKET_COUNTER = 0;
 	      GOODPUT_COUNTER = 0;
 	    }
 
 	    bytes_in_transit -= packet_in_transit->data_size;
-	    unlink_packet_from_in_transit(packet_in_transit);
+	    if(CONTINUOUS_TRANSMISSION == 0){
+	      unlink_packet_from_in_transit(packet_in_transit);
+	    }
 	  }
 	}
 
@@ -475,15 +734,13 @@ void process_incoming(char* buf, const int len, butp_packet* outgoing_packet){
 	uint32_t data_length = get_data_length(inbound, len);
 	uint16_t header_length = get_header_length(inbound);
 	if(has_data(inbound) && checksum_ok(buf, len)){
-	  if(CONTINUOUS_TRANSMISSION == 0){
 	    butp_packet* new_data = malloc(sizeof(butp_packet));
-	    memset(new_data, 0, sizeof(butp_packet));
+	    //memset(new_data, 0, sizeof(butp_packet));
 	    new_data->header.seq = inbound->seq;
 	    new_data->data_size = data_length;
-	    new_data->datum = malloc(data_length);
-	    memcpy(new_data->datum, buf+header_length, data_length);
+	    //new_data->datum = malloc(data_length);
+	    //memcpy(new_data->datum, buf+header_length, data_length);
 	    insert_packet_in_input_buffer(new_data);
-	  }
 
 	  // Set ACK flag and ACK value in outgoing packet.
 	  outgoing_packet->header.ack = inbound->seq;
@@ -508,11 +765,71 @@ void process_incoming(char* buf, const int len, butp_packet* outgoing_packet){
 
 	// Process window information.
 	if(has_window(inbound))
-	    your_win = inbound->window;
+	    receiver_window_max = inbound->window;
 
 	// Process FL_SYN flag.
+	if(has_syn(inbound)){
+	  handle_intermittent_syn(inbound);
+	  return -1;
+	}
 
 	// Process FL_ABO flag.
+	if(has_abort(inbound)){
+	  clear_lists();
+	  state = KILL;
+	  return -1;
+	}
+
+	return 0;
+}
+
+void handle_intermittent_syn(butp_wtheader* inbound){
+	  clear_lists();
+	  
+	  your_seq = inbound->seq;
+
+	  if(has_window(inbound) && !has_timestamp(inbound)){
+	    butp_wheader* whdr = (butp_wheader*)inbound;
+	    receiver_window_max = whdr->window;
+	  }
+
+	  butp_wtheader packet;
+	  packet.seq = my_seq;
+	  packet.ack = your_seq;
+	  packet.opt = FL_SYN;
+	  packet.opt |= FL_ACK;
+	  int psize = sizeof(butp_header);
+	  if(has_window(inbound) && (!has_timestamp(inbound))){
+	    packet.opt |= FL_WIN;
+	    packet.window = my_win;
+	    psize+=0x4;
+	  }
+	  else if((!has_window(inbound)) && has_timestamp(inbound)){
+	    packet.opt |= FL_TME;
+	    packet.window = inbound->timestamp;
+	    psize+=0x4;
+	  }
+	  else if(has_window(inbound) && has_timestamp(inbound)){
+	    packet.opt |= FL_WIN;
+	    packet.opt |= FL_TME;
+	    packet.window = my_win;
+	    packet.timestamp = inbound->timestamp;
+	    psize+=0x8;
+	  }
+
+	  host_header_to_network(&packet);
+
+	  int rval = sendto(sock, &packet, psize, 0, destination->ai_addr, destination->ai_addrlen);
+	  if(rval == -1){
+	    state = KILL;
+	    return;
+	  }
+	  else{
+	    if(syn_listen_wait() == -1)
+	      state = KILL;
+	    return;
+	  }
+	  state = ESTABLISHED;
 }
 
 void build_outgoing(butp_wtheader* packet, uint32_t packet_data_size, butp_packet* outgoing_packet){
@@ -537,8 +854,8 @@ void build_outgoing(butp_wtheader* packet, uint32_t packet_data_size, butp_packe
 	  outgoing_packet->header.opt|=FL_FAC;
 
 	// This just applies for continuous transmission of random data - create packets when there are none in the queue.
-	if((first_in_buffer == NULL) && CONTINUOUS_TRANSMISSION){
-	  if(bytes_in_transit+MTU-FULL_HEADER_SIZE < your_win){
+	if( (first_in_buffer == NULL) && CONTINUOUS_TRANSMISSION && (TRANSMISSION_COUNT != 0) ){
+	  if(bytes_in_transit+MTU-FULL_HEADER_SIZE < congestion_win){
 	    butp_packet* packet = malloc(sizeof(butp_packet));
 	    memset(packet, 0, sizeof(butp_packet));
 	    first_in_buffer = packet;
@@ -561,7 +878,7 @@ void build_outgoing(butp_wtheader* packet, uint32_t packet_data_size, butp_packe
 	}
 
 	// We must not ignore the receiver window size!	
-	if(bytes_in_transit+next_data_out->data_size > your_win){
+	if(bytes_in_transit+next_data_out->data_size > congestion_win){
 	  return;
 	}
 
@@ -660,15 +977,14 @@ int time_exceeded(struct timespec* tv){
 uint16_t calculate_checksum(const char* buf, uint32_t buflen){
 	if(buf == NULL)
 	  return 0;
+
+	const uint16_t* ptr = (uint16_t*)buf;
+	const uint16_t* end = (uint16_t*)(buf+buflen);
+
 	uint16_t checksum = 0;
-	uint32_t done = 0;
-	do{
-	  uint16_t dbyte = 0;
-	  dbyte = *(buf+done);
-	  dbyte = ~dbyte;	  
-	  checksum += dbyte;
-	  done+=2;
-	}while(done < buflen);
+	while( ptr < end )
+	  checksum += ~(*ptr++);
+
 	checksum = ~checksum;
 	return checksum;
 }
@@ -729,6 +1045,7 @@ int seq_ok(butp_wtheader* packet, const int datasize){
 }
 
 void clear_lists(){
+if(CONTINUOUS_TRANSMISSION == 0){
 	// Free in-transit memory.
 	butp_packet* ptr = in_transit_first;
 	butp_packet* tp = NULL;
@@ -744,6 +1061,7 @@ void clear_lists(){
 	  free(ptr);
 	  ptr = tp;
 	}
+}
 }
 
 int last_packet(butp_wtheader* packet){
@@ -827,14 +1145,18 @@ void empty_in_transit(){
 
 void adjust_packet_timeout(){
 	uint32_t new_timeout = 0;
-	uint32_t proposed_timeout = round_trip_time_factor*RTT;
+	uint32_t proposed_timeout = 0;
+	
+	if(WIRELESS_CONNECTION)
+	  proposed_timeout = wireless_timeout_increase_factor*RTT;
+	else
+	  proposed_timeout = round_trip_time_factor*RTT;
 
 	if(proposed_timeout < packet_timeout_min)
 	  new_timeout = packet_timeout_min;
 	else
 	  new_timeout = proposed_timeout;
 
-	packet_timeout_data.tv_sec = 0;
 	packet_timeout_data.tv_nsec = new_timeout;
 }
 
@@ -853,6 +1175,21 @@ butp_packet* get_packet_in_transit(const uint32_t seq){
 }
 
 void insert_packet_in_input_buffer(butp_packet* packet){
+	static int packets_in_buffer = 0;
+
+	// This is just for test purposes, remove later.
+	if(packets_in_buffer == 100){
+	  butp_packet* ptr = received_ready_first;
+	  do{
+	    free(ptr->datum);
+	    free(ptr);
+	    ptr = ptr->next;
+	  }while(ptr != NULL);
+	  packets_in_buffer = 0;
+	  received_ready_first = NULL;
+	}
+	// This was just for test purposes, remove later.
+
 	if(received_ready_first == NULL){
 	  received_ready_first = packet;
 	  received_ready_first->next = NULL;
@@ -894,7 +1231,7 @@ int is_your_timestamp(const butp_wtheader* packet){
 	return ((packet->opt)&FL_MTM);
 }
 
-int has_fin_ack(butp_wtheader* packet){
+int has_fin_ack(const butp_wtheader* packet){
 	return ((packet->opt)&FL_FAC);
 }
 
@@ -908,6 +1245,154 @@ int has_fin(const butp_wtheader* packet){
 
 int has_abort(const butp_wtheader* packet){
 	return ((packet->opt)&FL_ABO);
+}
+
+int has_wireless(const butp_wtheader* packet){
+	return ((packet->opt)&FL_WIR);
+}
+
+void modify_congestion_window(uint8_t cause){
+	static int cumulative_acks = 0;
+	static int cumulative_timeouts = 0;
+
+	float btproduct = (float)RTT/1000000000*receiver_window_max;
+
+	if(WIRELESS_CONNECTION){
+	  if(cause == ACK_RECEIVED){
+	    if(TRANSMISSION_MODE == BOOST){
+	      congestion_win = btproduct*(1-pow(boost_power, boost_factor*ACKED_BYTE_COUNT/btproduct));
+	      if( (congestion_win / btproduct ) >= boost_transition_division_factor){
+		printf("Switching mode to: GLIDE WIN: %i\n", congestion_win);
+	        TRANSMISSION_MODE = GLIDE;
+	      }
+	    }
+	    else if(TRANSMISSION_MODE == GLIDE){
+	      congestion_win = btproduct*(1-glide_oscillation_amplitude_factor*sin(ACKED_BYTE_COUNT/glide_oscillation_frequency_factor));
+	    }
+	    else if(TRANSMISSION_MODE == SNEAK){
+	      congestion_win += congestion_win/sneak_division_factor;
+	      if(cumulative_acks >= 2){
+	        cumulative_acks = 0;
+	        TRANSMISSION_MODE = RESTORE;
+		printf("Switching mode to: RESTORE WIN: %i\n", congestion_win);
+	      }
+	    }
+	    else if(TRANSMISSION_MODE == RESTORE){
+	      congestion_win *= restore_factor;
+	      if(congestion_win >= btproduct ){
+	        congestion_win = btproduct*boost_transition_division_factor;
+	        TRANSMISSION_MODE = GLIDE;
+		printf("Switching mode to: GLIDE WIN: %i\n", congestion_win);
+	      }
+	    }
+	  }
+	  else if(cause == RETRANSMISSION_TIMEOUT){
+	    adjust_packet_timeout();
+
+	    if(TRANSMISSION_MODE == BOOST){
+	      congestion_win *=0.9;
+	      if(cumulative_timeouts >= 4){
+	        cumulative_timeouts = 0;
+	        TRANSMISSION_MODE = GLIDE;
+	        printf("Switching mode to: GLIDE WIN: %i\n", congestion_win);
+	      }
+	    }
+	    else if(TRANSMISSION_MODE == GLIDE){
+	      congestion_win *= glide_timeout_congestion_reduce_factor;
+	      if(cumulative_timeouts >= 4){
+	        cumulative_timeouts = 0;
+	        TRANSMISSION_MODE = SNEAK;
+	        printf("Switching mode to: SNEAK WIN: %i\n", congestion_win);
+	      }
+	    }
+	    else if(TRANSMISSION_MODE == SNEAK){
+	      congestion_win *= sneak_timeout_congestion_reduce_factor;
+	    }
+	    else if(TRANSMISSION_MODE == RESTORE){
+	      congestion_win *= restore_timeout_congestion_reduce_factor;
+	      if(cumulative_timeouts >= 3){
+	        cumulative_timeouts = 0;
+	        TRANSMISSION_MODE = GLIDE;
+	        printf("Switching mode to: GLIDE WIN: %i\n", congestion_win);
+	      }
+	    }
+	  }
+	}
+	else{
+	  if(cause == ACK_RECEIVED){
+	    printf("ACK cumulative_acks: %i\n", cumulative_acks);
+	    cumulative_acks++;
+	    cumulative_timeouts = 0;
+
+	    if(TRANSMISSION_MODE == BOOST){
+	      printf("BOOST\n");
+	      congestion_win = btproduct*(1-pow(boost_power, boost_factor*ACKED_BYTE_COUNT/btproduct));
+	      if( (congestion_win / btproduct ) >= boost_transition_division_factor){
+		printf("Switching mode to: GLIDE WIN: %i\n", congestion_win);
+	        TRANSMISSION_MODE = GLIDE;
+	      }
+	    }
+	    else if(TRANSMISSION_MODE == GLIDE){
+	      printf("GLIDE\n");
+	      congestion_win = btproduct*(1-glide_oscillation_amplitude_factor*sin(ACKED_BYTE_COUNT/glide_oscillation_frequency_factor));
+	    }
+	    else if(TRANSMISSION_MODE == SNEAK){
+	      printf("SNEAK cumulative_acks: %i\n", cumulative_acks);
+	      if( cumulative_acks >= 2 ){
+	        cumulative_acks = 0;
+	        TRANSMISSION_MODE = RESTORE;
+		printf("Switching mode to: RESTORE WIN: %i\n", congestion_win);
+	      }
+	    }
+	    else if(TRANSMISSION_MODE == RESTORE){
+	      printf("RESTORE\n");
+	      congestion_win *= restore_factor;
+	      if(congestion_win >= btproduct){
+	        congestion_win = btproduct*boost_transition_division_factor;
+	        TRANSMISSION_MODE = GLIDE;
+		printf("Switching mode to: GLIDE WIN: %i\n", congestion_win);
+	      }
+	    }
+	  }
+	  else if(cause == RETRANSMISSION_TIMEOUT){
+	    printf("RTO cumulative_timeouts: %i\n", cumulative_timeouts);
+	    cumulative_timeouts++;
+	    cumulative_acks = 0;
+
+	    if(TRANSMISSION_MODE == BOOST){
+	      if(cumulative_timeouts >= 5){
+	        cumulative_timeouts = 0;
+	      	congestion_win *=0.9;
+	      	TRANSMISSION_MODE = GLIDE;
+	      	printf("Switching mode to: GLIDE WIN: %i\n", congestion_win);
+	      }
+	    }
+	    else if(TRANSMISSION_MODE == GLIDE){
+	      if(cumulative_timeouts >= 5){
+	        cumulative_timeouts = 0;
+	        congestion_win *= glide_timeout_congestion_reduce_factor;
+	        TRANSMISSION_MODE = SNEAK;
+	        printf("Switching mode to: SNEAK WIN: %i\n", congestion_win);
+	      }
+	    }
+	    else if(TRANSMISSION_MODE == SNEAK){
+	      congestion_win *= sneak_timeout_congestion_reduce_factor;
+	    }
+	    else if(TRANSMISSION_MODE == RESTORE){
+	      if(cumulative_timeouts >= 5){
+	        cumulative_timeouts = 0;
+	        congestion_win *= restore_timeout_congestion_reduce_factor;
+	        TRANSMISSION_MODE = GLIDE;
+	        printf("Switching mode to: GLIDE WIN: %i\n", congestion_win);
+	      }
+	    }
+	  }
+	}
+	     
+	if(congestion_win < receiver_window_min)
+	  congestion_win = receiver_window_min;
+	
+	printf("Btproduct: %f WIN: %i\n", btproduct, congestion_win);
 }
 
 void fill_output_buffer(const butp_packet* outgoing_packet){
